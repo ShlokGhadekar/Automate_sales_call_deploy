@@ -380,7 +380,7 @@ app.ws('/connection', (ws) => {
   }
 });
 // At the top, with your imports:
-const { makeOutBoundCall } = require('./outbound-call');
+const { makeOutBoundCall } = require('./scripts/outbound-call');
 
 // Add this route before app.listen
 app.post('/api/start-call', async (req, res) => {
