@@ -379,6 +379,19 @@ app.ws('/connection', (ws) => {
     console.log(err);
   }
 });
+// At the top, with your imports:
+const { makeOutBoundCall } = require('./outbound-call');
+
+// Add this route before app.listen
+app.post('/api/start-call', async (req, res) => {
+  try {
+    await makeOutBoundCall();
+    res.status(200).json({ message: 'Outbound call started' });
+  } catch (err) {
+    console.error('Server -> Failed to start call:', err);
+    res.status(500).json({ error: 'Failed to start outbound call' });
+  }
+});
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
