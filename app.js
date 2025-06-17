@@ -1,131 +1,127 @@
 const fs = require('fs');
-
 fs.mkdirSync('tmp', { recursive: true });
+
 require('dotenv').config();
 require('colors');
-const translate = require('google-translate-api-x'); // Moved to top for clarity
-
-console.log('SERVER:', process.env.SERVER);
 
 const express = require('express');
 const ExpressWs = require('express-ws');
+const translate = require('google-translate-api-x');
 
+console.log('SERVER:', process.env.SERVER);
+
+// Core services
 const { GptService } = require('./services/gpt-service');
 const { StreamService } = require('./services/stream-service');
 const { TranscriptionService } = require('./services/transcription-service');
 const { TextToSpeechService } = require('./services/tts-service');
 const { recordingService } = require('./services/recording-service');
+const { makeOutBoundCall } = require('./scripts/outbound-call'); // ✅ correct import
 
 const VoiceResponse = require('twilio').twiml.VoiceResponse;
 
 const app = express();
 ExpressWs(app);
+app.use(express.json());
+
+const PORT = process.env.PORT || 3000;
 
 app.get('/', (req, res) => {
   res.send('Server is running!');
 });
 
-const PORT = process.env.PORT || 3000;
+// ✅ Endpoint to start outbound call
+app.post('/outbound-call', async (req, res) => {
+  try {
+    const sid = await makeOutBoundCall();
+    res.json({ success: true, sid });
+  } catch (err) {
+    console.error("Failed to start call:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
+// Twilio /incoming webhook
 app.post('/incoming', (req, res) => {
   try {
     const response = new VoiceResponse();
-
-    // Professional greeting with general tech products
-    // response.say('Welcome to Lodha Builders, connecting you to your AI agent.');
-    // response.pause({ length: 2 });
-    // response.say('Thanks for exploring our website. We currently have exciting offers on wireless earbuds starting at 2,999 rupees, smartwatches from 4,999, and tablets starting at just 14,999.');
-    // response.pause({ length: 2 });
-    // response.say('Let me assist you with anything you\'re interested in.');
-
     const connect = response.connect();
     connect.stream({ url: `wss://${process.env.SERVER}/connection` });
-
-    response.pause({ length: 600 }); // 10-minute pause for conversation
-
-    res.type('text/xml');
-    res.send(response.toString());
+    response.pause({ length: 600 }); // 10 minutes
+    res.type('text/xml').send(response.toString());
   } catch (err) {
     console.error(err);
     res.status(500).send('Server error');
   }
 });
 
+// Twilio WebSocket stream
 app.ws('/connection', (ws) => {
   try {
     ws.on('error', console.error);
-    let streamSid;
-    let callSid;
-
+    let streamSid, callSid;
     const gptService = new GptService();
     const streamService = new StreamService(ws);
     const transcriptionService = new TranscriptionService();
     const ttsService = new TextToSpeechService();
 
-    let marks = [];
-    let interactionCount = 0;
-
     const ttsQueue = [];
     let isTtsGenerating = false;
+    let interactionCount = 0;
+    let marks = [];
 
     async function processTtsQueue() {
-  if (isTtsGenerating || ttsQueue.length === 0) return;
+      if (isTtsGenerating || ttsQueue.length === 0) return;
+      isTtsGenerating = true;
 
-  isTtsGenerating = true;
-  const { gptReply, icount } = ttsQueue.shift();
+      const { gptReply, icount } = ttsQueue.shift();
+      try {
+        console.log(`Interaction ${icount}: GPT -> TTS (Queued): ${gptReply.partialResponse}`.green);
+        await ttsService.generate(gptReply, icount);
+      } catch (err) {
+        console.error('TTS generation failed:', err);
+        isTtsGenerating = false;
+        processTtsQueue();
+      }
+    }
 
-  try {
-    console.log(`Interaction ${icount}: GPT -> TTS (Queued): ${gptReply.partialResponse}`.green);
-    await ttsService.generate(gptReply, icount);
-    // ⚠️ do not set isTtsGenerating = false here — we do that only when mark is received
-  } catch (err) {
-    console.error(`TTS generation failed:`, err);
-    isTtsGenerating = false;
-    processTtsQueue(); // Skip to next one
-  }
-}
-
-    ws.on('message', function message(data) {
+    ws.on('message', (data) => {
       const msg = JSON.parse(data);
-
       if (msg.event === 'start') {
-  streamSid = msg.start.streamSid;
-  callSid = msg.start.callSid;
+        streamSid = msg.start.streamSid;
+        callSid = msg.start.callSid;
 
-  streamService.setStreamSid(streamSid);
-  gptService.setCallSid(callSid);
+        streamService.setStreamSid(streamSid);
+        gptService.setCallSid(callSid);
 
-  console.log(`Twilio -> Starting Media Stream for ${streamSid}`.underline.red);
+        console.log(`Twilio -> Starting Media Stream for ${streamSid}`.underline.red);
 
-  // Delay TTS until Twilio is actually ready
-  setTimeout(() => {
-    ttsQueue.push({
-      gptReply: {
-        partialResponseIndex: null,
-        partialResponse: "लोधा बिल्डर्स में आपका स्वागत है, हम आपको हमारे एआई एजेंट से जोड़ रहे हैं।",
-      },
-      icount: 0,
-    });
+        setTimeout(() => {
+          ttsQueue.push({
+            gptReply: { partialResponseIndex: null, partialResponse: "लोधा बिल्डर्स में आपका स्वागत है, हम आपको हमारे एआई एजेंट से जोड़ रहे हैं।" },
+            icount: 0,
+          });
 
-    ttsQueue.push({
-      gptReply: {
-        partialResponseIndex: null,
-        partialResponse: "नमस्ते! क्या आप मुंबई या पुणे में नया घर खरीदने में रुचि रखते हैं?",
-      },
-      icount: 1,
-    });
+          ttsQueue.push({
+            gptReply: { partialResponseIndex: null, partialResponse: "नमस्ते! क्या आप मुंबई या पुणे में नया घर खरीदने में रुचि रखते हैं?" },
+            icount: 1,
+          });
 
-    processTtsQueue(); // start after delay
-  }, 300); // 300ms delay to make sure Twilio is ready
-} else if (msg.event === 'media') {
+          processTtsQueue();
+        }, 300);
+      }
+
+      if (msg.event === 'media') {
         transcriptionService.send(msg.media.payload);
+      }
 
-      } else if (msg.event === 'mark') {
+      if (msg.event === 'mark') {
         const label = msg.mark.name;
         console.log(`Twilio -> Audio completed mark (${msg.sequenceNumber}): ${label}`.red);
-        marks = marks.filter(m => m !== label);
+        marks = marks.filter((m) => m !== label);
+      }
 
-      } else if (msg.event === 'stop') {
+      if (msg.event === 'stop') {
         console.log(`Twilio -> Media stream ${streamSid} ended.`.underline.red);
       }
     });
@@ -133,83 +129,49 @@ app.ws('/connection', (ws) => {
     transcriptionService.on('utterance', async (text) => {
       if (marks.length > 0 && text?.length > 5) {
         console.log('Twilio -> Interruption, Clearing stream'.red);
-        ws.send(JSON.stringify({
-          streamSid,
-          event: 'clear',
-        }));
+        ws.send(JSON.stringify({ streamSid, event: 'clear' }));
       }
     });
 
     transcriptionService.on('transcription', async (text) => {
       if (!text) return;
-
       try {
         const { text: englishText } = await translate(text, { to: 'en' });
         console.log(`Interaction ${interactionCount} – STT(Hindi) -> EN -> GPT: ${englishText}`.yellow);
-        gptService.completion(englishText, interactionCount);
-        interactionCount += 1;
-      } catch (err) {
-        console.error('Error translating user input:', err);
-      }
-    });
-
-    gptService.on('gptreply', async (gptReply, icount) => {
-      try {
-        // Translate GPT response to Hindi
-        const result = await translate(gptReply.partialResponse, { to: 'hi' });
-
-        const hindiReply = {
-          ...gptReply,
-          partialResponse: result.text,
-        };
-
-        console.log(`Interaction ${icount}: GPT -> Hindi -> TTS: ${hindiReply.partialResponse}`.green);
-
-        // Enqueue the Hindi TTS reply
-        ttsQueue.push({ gptReply: hindiReply, icount });
-        processTtsQueue();
+        gptService.completion(englishText, interactionCount++);
       } catch (err) {
         console.error('Translation error:', err);
       }
     });
 
-   ttsService.on('speech', (responseIndex, audio, label, icount) => {
-  console.log(`Interaction ${icount}: TTS -> TWILIO: ${label}`.blue);
+    gptService.on('gptreply', async (gptReply, icount) => {
+      try {
+        const result = await translate(gptReply.partialResponse, { to: 'hi' });
+        const hindiReply = { ...gptReply, partialResponse: result.text };
+        console.log(`Interaction ${icount}: GPT -> Hindi -> TTS: ${hindiReply.partialResponse}`.green);
+        ttsQueue.push({ gptReply: hindiReply, icount });
+        processTtsQueue();
+      } catch (err) {
+        console.error('GPT->TTS translation failed:', err);
+      }
+    });
 
-  // Send audio
-  streamService.buffer(responseIndex, audio, label);
+    ttsService.on('speech', (responseIndex, audio, label, icount) => {
+      console.log(`Interaction ${icount}: TTS -> TWILIO: ${label}`.blue);
+      streamService.buffer(responseIndex, audio, label);
 
-  // Wait for TWILIO to confirm this mark before sending next
-  const waitForMark = (markLabel) => {
-    if (markLabel === label) {
-      streamService.off('audiosent', waitForMark);
-      isTtsGenerating = false;
-      processTtsQueue(); // now continue
-    }
-  };
+      const waitForMark = (markLabel) => {
+        if (markLabel === label) {
+          streamService.off('audiosent', waitForMark);
+          isTtsGenerating = false;
+          processTtsQueue();
+        }
+      };
 
-  streamService.on('audiosent', waitForMark);
-});
-
-   
-
+      streamService.on('audiosent', waitForMark);
+    });
   } catch (err) {
     console.log(err);
-  }
-});
-// At the top, with your imports:
-const { makeOutBoundCall } = require('./scripts/outbound-call');
-
-// Add this route before app.listen
-app.use(express.json());
-app.post("/outbound-call", async (req, res) => {
-  try {
-    const makeOutBoundCall = require("./scripts/outbound-call");
-    const sid = await makeOutBoundCall();
-    res.json({ success: true, sid });
-  } catch (err) {
-    console.error("Failed to start call:", err);
-    res.status(500).json({ success: false, error: err.message });
   }
 });
 
