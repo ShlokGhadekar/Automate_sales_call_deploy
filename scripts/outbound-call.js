@@ -17,4 +17,4 @@ async function makeOutBoundCall() {
   return call.sid;
 }
 
-module.exports = makeOutBoundCall;
+module.exports = { makeOutBoundCall }; // ✅ fixed
