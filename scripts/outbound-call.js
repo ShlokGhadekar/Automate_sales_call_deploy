@@ -3,7 +3,8 @@ require('dotenv').config();
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
 const client = require('twilio')(accountSid, authToken);
-
+console.log('ACCOUNT_SID:', process.env.TWILIO_ACCOUNT_SID);
+console.log('AUTH_TOKEN:', process.env.TWILIO_AUTH_TOKEN);
 async function makeOutBoundCall() {
   const call = await client.calls.create({
     url: `https://${process.env.SERVER}/incoming`,
