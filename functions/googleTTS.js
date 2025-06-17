@@ -3,9 +3,13 @@ const path = require('path');
 const util = require('util');
 const textToSpeech = require('@google-cloud/text-to-speech');
 
-const client = new textToSpeech.TextToSpeechClient({
-  keyFilename: path.resolve(__dirname, '../google_tts_cred.json'),
-});
+const { TextToSpeechClient } = require('@google-cloud/text-to-speech');
+
+const credentials = process.env.GOOGLE_TTS_CRED_JSON
+  ? JSON.parse(process.env.GOOGLE_TTS_CRED_JSON)
+  : require('../google_tts_cred.json'); // fallback for local dev
+
+const client = new TextToSpeechClient({ credentials });
 
 const writeFile = util.promisify(fs.writeFile);
 
