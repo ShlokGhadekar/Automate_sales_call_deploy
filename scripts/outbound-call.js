@@ -1,25 +1,19 @@
-// outbound-call.js
-require('dotenv').config();
-const twilio = require('twilio');
+require("dotenv").config();
 
 async function makeOutBoundCall() {
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const client = require("twilio")(accountSid, authToken);
 
-  const client = twilio(accountSid, authToken);
+  const call = await client.calls.create({
+    url: `https://${process.env.SERVER}/incoming`,
+    to: process.env.YOUR_NUMBER,
+    from: process.env.FROM_NUMBER,
+    record: true,
+  });
 
-  try {
-    const call = await client.calls.create({
-      url: `https://${process.env.SERVER}/incoming`,
-      to: process.env.YOUR_NUMBER,
-      from: process.env.FROM_NUMBER,
-      record: true,
-    });
-    console.log('Twilio -> Call SID:', call.sid);
-  } catch (error) {
-    console.error('Twilio -> Call failed:', error);
-    throw error;
-  }
+  console.log("Call SID:", call.sid);
+  return call.sid;
 }
 
-module.exports = { makeOutBoundCall };
+module.exports = makeOutBoundCall;
