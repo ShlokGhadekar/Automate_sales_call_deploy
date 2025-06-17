@@ -1,19 +1,25 @@
 const fs = require('fs');
 const path = require('path');
 const util = require('util');
-const textToSpeech = require('@google-cloud/text-to-speech');
-
 const { TextToSpeechClient } = require('@google-cloud/text-to-speech');
 
-// SAFELY load credentials from env or local file
 let credentials;
-try {
-  credentials = process.env.GOOGLE_TTS_CRED_JSON
-    ? JSON.parse(process.env.GOOGLE_TTS_CRED_JSON)
-    : require('../google_tts_cred.json');
-} catch (err) {
-  console.error('❌ Google TTS credentials missing or malformed', err);
-  process.exit(1);
+
+if (process.env.GOOGLE_TTS_CRED_JSON) {
+  try {
+    credentials = JSON.parse(process.env.GOOGLE_TTS_CRED_JSON);
+  } catch (err) {
+    console.error('❌ GOOGLE_TTS_CRED_JSON is malformed:', err);
+    process.exit(1);
+  }
+} else {
+  const credPath = path.join(__dirname, '../google_tts_cred.json');
+  if (fs.existsSync(credPath)) {
+    credentials = require(credPath);
+  } else {
+    console.error('❌ No Google TTS credentials found (env or local)');
+    process.exit(1);
+  }
 }
 
 const client = new TextToSpeechClient({ credentials });
