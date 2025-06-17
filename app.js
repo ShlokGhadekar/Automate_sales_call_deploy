@@ -199,7 +199,7 @@ app.ws('/connection', (ws) => {
 });
 // At the top, with your imports:
 const { makeOutBoundCall } = require('./scripts/outbound-call');
-const PORT = process.env.PORT || 3000;
+
 // Add this route before app.listen
 app.use(express.json());
 app.post("/outbound-call", async (req, res) => {
