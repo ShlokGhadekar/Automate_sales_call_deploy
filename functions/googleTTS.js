@@ -5,9 +5,16 @@ const textToSpeech = require('@google-cloud/text-to-speech');
 
 const { TextToSpeechClient } = require('@google-cloud/text-to-speech');
 
-const credentials = process.env.GOOGLE_TTS_CRED_JSON
-  ? JSON.parse(process.env.GOOGLE_TTS_CRED_JSON)
-  : require('../google_tts_cred.json'); // fallback for local dev
+// SAFELY load credentials from env or local file
+let credentials;
+try {
+  credentials = process.env.GOOGLE_TTS_CRED_JSON
+    ? JSON.parse(process.env.GOOGLE_TTS_CRED_JSON)
+    : require('../google_tts_cred.json');
+} catch (err) {
+  console.error('❌ Google TTS credentials missing or malformed', err);
+  process.exit(1);
+}
 
 const client = new TextToSpeechClient({ credentials });
 
@@ -18,7 +25,7 @@ async function googleTTS({ text }) {
     input: { text },
     voice: {
       languageCode: 'hi-IN',
-      name: 'hi-IN-Wavenet-C', // Indian English voice
+      name: 'hi-IN-Wavenet-C',
     },
     audioConfig: {
       audioEncoding: 'MULAW',
