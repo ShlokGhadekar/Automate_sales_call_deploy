@@ -33,7 +33,13 @@ app.get('/', (req, res) => {
 // ✅ Endpoint to start outbound call
 app.post('/outbound-call', async (req, res) => {
   try {
-    const sid = await makeOutBoundCall();
+    const { phoneNumber } = req.body;
+
+    if (!phoneNumber || typeof phoneNumber !== 'string') {
+      return res.status(400).json({ error: 'Valid phone number is required' });
+    }
+
+    const sid = await makeOutBoundCall(phoneNumber);
     res.json({ success: true, sid });
   } catch (err) {
     console.error("Failed to start call:", err);
